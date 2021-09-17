@@ -1,0 +1,239 @@
+/*
+
+Excited States software: KGS
+Contributors: See CONTRIBUTORS.txt
+Contact: kgs-contact@simtk.org
+
+Copyright (C) 2009-2017 Stanford University
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+This entire text, including the above copyright notice and this permission notice
+shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS, CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+*/
+
+
+#include <string>
+#include <iostream>
+#include <list>
+
+#include <gsl/gsl_matrix.h>
+#include <gsl/gsl_vector_double.h>
+#include <gsl/gsl_vector.h>
+#include <math/gsl_helpers.h>
+#include <math/NullspaceSVD.h>
+#include <math/Eigenvalue.h>
+
+#include "core/Molecule.h"
+#include "core/Grid.h"
+#include "HbondIdentifier.h"
+#include "IO.h"
+#include "Logger.h"
+#include "applications/options/VibrationentropyOptions.h"
+#include "../core/Configuration.h"
+#include "CTKTimer.h"
+
+extern double jacobianAndNullspaceTime;
+extern double rigidityTime;
+
+using namespace std;
+
+int main( int argc, char* argv[] ){
+
+  CTKTimer timer;
+  timer.Reset();
+  double start_time = timer.LastElapsedTime();
+
+  if(argc<2){ cerr<<"Too few arguments. Please specify PDB-file in arguments"<<endl; exit(-1);}
+
+  VibrationentropyOptions::createOptions(argc,argv);
+  VibrationentropyOptions& options = *(VibrationentropyOptions::getOptions());
+
+  enableLogger("rigidity");
+  enableLogger("default");
+
+  enableLogger("so"); //print options
+  options.print();
+
+  string out_path = options.workingDirectory;
+  Selection movingResidues(options.residueNetwork);
+  Molecule* protein = IO::readPdb(
+      options.ligandStructureFile,
+      options.extraCovBonds,
+      options.hydrogenbondMethod,
+      options.hydrogenbondFile
+  );
+    
+    if (options.setligand!=""){
+        protein->setatomligand(options.setligand);
+    }
+    
+  protein->initializeTree(movingResidues,1.0,options.roots);
+  string name = protein->getName();
+
+  log("rigidity")<<"Molecule with ligand has:"<<endl;
+  log("rigidity") << "> " << protein->getAtoms().size() << " atoms" << endl;
+  log("rigidity")<<"> "<<protein->getInitialCollisions().size()<<" initial collisions"<<endl;
+  log("rigidity")<<"> "<<protein->m_spanningTree->m_cycleAnchorEdges.size()<<" total bond constraints"<<endl;
+  log("rigidity")<<"> "<<protein->getHBonds().size()<<" hydrogen bonds"<<endl;
+  log("rigidity")<<"> "<<protein->getHydrophobicBonds().size()<<" hydrophobic bonds"<<endl;
+  log("rigidity")<<"> "<<protein->getDBonds().size()<<" distance bonds"<<endl;
+  log("rigidity") << "> " << protein->m_spanningTree->getNumDOFs() << " DOFs of which " << protein->m_spanningTree->getNumCycleDOFs() << " are cycle-DOFs" << endl;
+  log("rigidity") << "> " << protein->m_spanningTree->ligand_dof_id.size() << " DOFs of which " << protein->m_spanningTree->ligand_cycledof_id.size() << " are cycle-DOFs from ligand\n" << endl;
+
+  Configuration* conf = protein->m_conf;
+  NullspaceSVD ns = *(dynamic_cast<NullspaceSVD*>(conf->getNullspaceligand()));
+  int numRows = ns.getMatrix()->size1;
+  int numCols = ns.getMatrix()->size2;
+  int nullspaceCols = ns.getNullspaceSize();
+  int rankJacobian = numCols - nullspaceCols;
+  int numRedundantCons = numRows-rankJacobian;
+
+
+    Molecule* protein_noligand = IO::readPdb(
+            options.noligandStructureFile,
+            options.extraCovBonds,
+            options.hydrogenbondMethod,
+            options.hydrogenbondFile
+    );
+
+    if (options.setligand!=""){
+        protein_noligand->setatomligand(options.setligand);
+    }
+
+    protein_noligand->initializeTree(movingResidues,1.0,options.roots);
+    string name_noligand = protein_noligand->getName();
+
+    log("rigidity")<<"Molecule without ligand has:"<<endl;
+    log("rigidity") << "> " << protein_noligand->getAtoms().size() << " atoms" << endl;
+    log("rigidity")<<"> "<<protein_noligand->getInitialCollisions().size()<<" initial collisions"<<endl;
+    log("rigidity")<<"> "<<protein_noligand->m_spanningTree->m_cycleAnchorEdges.size()<<" total bond constraints"<<endl;
+    log("rigidity")<<"> "<<protein_noligand->getHBonds().size()<<" hydrogen bonds"<<endl;
+    log("rigidity")<<"> "<<protein_noligand->getHydrophobicBonds().size()<<" hydrophobic bonds"<<endl;
+    log("rigidity")<<"> "<<protein_noligand->getDBonds().size()<<" distance bonds"<<endl;
+    log("rigidity") << "> " << protein_noligand->m_spanningTree->getNumDOFs() << " DOFs of which " << protein_noligand->m_spanningTree->getNumCycleDOFs() << " are cycle-DOFs" << endl;
+    log("rigidity") << "> " << protein_noligand->m_spanningTree->ligand_dof_id.size() << " DOFs of which " << protein_noligand->m_spanningTree->ligand_cycledof_id.size() << " are cycle-DOFs from ligand\n" << endl;
+
+    Configuration* conf_noligand = protein_noligand->m_conf;
+    NullspaceSVD ns_noligand = *(dynamic_cast<NullspaceSVD*>(conf_noligand->getNullspaceligand()));
+    int numRows_noligand = ns_noligand.getMatrix()->size1;
+    int numCols_noligand = ns_noligand.getMatrix()->size2;
+    int nullspaceCols_noligand = ns_noligand.getNullspaceSize();
+    int rankJacobian_noligand = numCols_noligand - nullspaceCols_noligand;
+    int numRedundantCons_noligand = numRows_noligand-rankJacobian_noligand;
+
+    //Site transfer DOF analysis
+    ///Only if source and sink are provided, compute mutual information
+    bool mutualInformation = options.source !="";
+    if(mutualInformation) {
+        Selection source(options.source);
+        Selection sink(options.sink);
+        double mutInfo_noligand = protein_noligand->m_conf->siteDOFTransfer(source, sink,
+                                                          ns_noligand.getBasis()); /// change this to V-matrix for whole sliding mechanism
+        double mutInfo = protein->m_conf->siteDOFTransfer(source, sink,
+                                                          ns.getBasis()); /// change this to V-matrix for whole sliding mechanism
+    }
+
+  /// Create larger rigid substructures for rigid cluster decomposition
+  Molecule* rigidified = protein->collapseRigidBonds(options.collapseRigid);
+
+    Molecule* rigidified_noligand = protein_noligand->collapseRigidBonds(options.collapseRigid);
+
+
+
+  ///Write PDB File for pyMol usage
+  int sample_id = 1;
+  string out_file = out_path + "output/" + name + "_new_" +
+                    std::to_string((long long)sample_id)
+                    //static_cast<ostringstream*>( &(ostringstream() << sample_id) )->str()
+                    + ".pdb";
+  string out_file_noligand = out_path + "output/" + name_noligand + "_new_" +
+                      std::to_string((long long)sample_id)
+                      //static_cast<ostringstream*>( &(ostringstream() << sample_id) )->str()
+                      + ".pdb";
+
+  rigidified->writeRigidbodyIDToBFactor();
+  rigidified->m_conf->m_vdwEnergy = protein->vdwEnergy();
+  IO::writePdb(rigidified, out_file);
+
+    rigidified_noligand->writeRigidbodyIDToBFactor();
+    rigidified_noligand->m_conf->m_vdwEnergy = protein_noligand->vdwEnergy();
+    IO::writePdb(rigidified_noligand, out_file_noligand);
+
+
+
+    Eigenvalue Ev = *(dynamic_cast<Eigenvalue*>(rigidified->m_conf->Hessianmatrixentropy(20.0)));
+    ///save Jacobian and Nullspace to file
+    string outJac1=out_path + "output/" +  name + "_Hessian_test_" +
+                  std::to_string((long long)sample_id)
+                  + ".txt";
+    string outNull1=out_path + "output/" +  name + "_eigen_test_" +
+                   std::to_string((long long)sample_id)
+                   + ".txt";
+    gsl_matrix_outtofile(Ev.getHessiantorsionangle(),outJac1);
+    gsl_vector_outtofile(Ev.getEigenvalue(),outNull1);
+
+    Eigenvalue Ev_noligand = *(dynamic_cast<Eigenvalue*>(rigidified_noligand->m_conf->Hessianmatrixentropy(20.0)));
+    ///save Jacobian and Nullspace to file
+    string outJac1_noligand=out_path + "output/" +  name_noligand + "_Hessian_test_" +
+                   std::to_string((long long)sample_id)
+                   + ".txt";
+    string outNull1_noligand=out_path + "output/" +  name_noligand + "_eigen_test_" +
+                    std::to_string((long long)sample_id)
+                    + ".txt";
+    gsl_matrix_outtofile(Ev_noligand.getHessiantorsionangle(),outJac1_noligand);
+    gsl_vector_outtofile(Ev_noligand.getEigenvalue(),outNull1_noligand);
+
+    //Print final status
+    double end_time = timer.ElapsedTime();
+    log("rigidity")<< "Took "<<(end_time-start_time)<<" seconds to perform rigidity analysis\n";
+
+  if(options.saveData <= 0) return 0;
+
+
+  ///save pyMol coloring script
+  string pyMol = out_path + "output/" + name + "_pyMol_" +
+                 std::to_string((long long) sample_id)
+                 + ".pml";
+  string statFile = out_path + "output/" + name + "_stats_" +
+                    std::to_string((long long) sample_id)
+                    + ".txt";
+  ///Write statistics
+  IO::writeStats(protein, statFile, rigidified); //original protein with all bonds etc, rigidified one for cluster info
+
+
+  ///Write pyMol script
+  IO::writePyMolScript(rigidified, out_file, pyMol, protein);
+
+    ///save pyMol coloring script
+    string pyMol_noligand = out_path + "output/" + name_noligand + "_pyMol_" +
+                   std::to_string((long long) sample_id)
+                   + ".pml";
+    string statFile_noligand = out_path + "output/" + name_noligand + "_stats_" +
+                      std::to_string((long long) sample_id)
+                      + ".txt";
+    ///Write statistics
+    IO::writeStats(protein_noligand, statFile_noligand, rigidified_noligand); //original protein with all bonds etc, rigidified one for cluster info
+
+    ///Write pyMol script
+
+    IO::writePyMolScript(rigidified_noligand, out_file_noligand, pyMol_noligand, protein_noligand);
+
+  return 0;
+}
+
+
