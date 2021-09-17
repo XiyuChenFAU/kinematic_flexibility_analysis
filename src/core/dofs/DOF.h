@@ -81,6 +81,14 @@ class DOF {
   unsigned int getIndex() const;
 
   unsigned int getCycleIndex() const;
+    
+  bool isDOFligand() const;
+
+  bool isDOFbinding() const;
+
+  bool isDOFnull() const;
+
+  std::pair<int,int> dofatomid() const;
 
 
  protected:

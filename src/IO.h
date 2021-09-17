@@ -62,6 +62,8 @@ class IO {
 
   static void writePyMolScript(Molecule *rigidified, std::string pdb_file, std::string output_file_name, Molecule* iniMolecule = nullptr);
 
+  static void writePyMolrigidScript(std::string pdb_file, std::string output_file_name, Molecule* iniMolecule = nullptr);
+
   static void writeBondLengthsAndAngles(Molecule *molecule, std::string output_file_name);
 
   static void writeCovBonds(Molecule *molecule, std::string output_file_name);

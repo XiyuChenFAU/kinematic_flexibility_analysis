@@ -66,6 +66,8 @@ class Molecule {
   Atom* getAtom(const std::string& chainName, const int& resNum, const std::string& name) const;
   const std::vector<Atom*>& getAtoms() const;
   std::vector<Atom*>& getAtoms();
+  const std::vector<Atom*>& getligands() const;
+  std::vector<Atom*>& getligands();
   const std::list<Bond*>& getCovBonds() const;
   std::list<Bond*>& getCovBonds();
   const std::list<Hbond*>& getHBonds() const;
@@ -74,6 +76,7 @@ class Molecule {
   std::list<Hbond*>& getHBonds();
   std::list<DBond*>& getDBonds();
   std::list<HydrophobicBond*>& getHydrophobicBonds();
+  void setatomligand(std::string& chainname);
 
   int getMinResidueNumber();
   int getMaxResidueNumber();
@@ -118,6 +121,7 @@ class Molecule {
   Molecule* collapseRigidBonds(int collapseLevel = 1);
 
   void writeRigidbodyIDToBFactor();
+  int getatomligandnum();
 
   const std::vector<Rigidbody*> getRigidbodies() const;
   void buildRigidBodies (Selection& movingResidues, int collapseLevel = 1);
@@ -132,6 +136,7 @@ class Molecule {
   std::list<DBond *> m_dBonds;
   std::list<HydrophobicBond *> m_hydrophobicBonds;
   std::vector<Atom*> m_atoms;
+  std::vector<Atom*> m_ligands;
   std::map<unsigned int,Rigidbody*> m_rigidBodyMap; ///< Map for quickly looking up rigid bodies by id
   double m_collisionFactor;
 

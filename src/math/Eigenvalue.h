@@ -13,19 +13,26 @@ class Eigenvalue {
 
 
     public:
-        Eigenvalue(gsl_matrix* matrix1, gsl_matrix* matrix2);
+        Eigenvalue(gsl_matrix* matrix1, gsl_matrix* matrix2, gsl_matrix* matrix3);
         gsl_matrix * const Jacobianmatrix;  //TODO: Make private
         gsl_matrix * const Hessiancartesian;       //TODO: Make private
         gsl_matrix * const Hessiantorsionangle;       //TODO: Make private
-        gsl_vector * const eigenvalue;
-        gsl_matrix * const eigenvector;
+        gsl_matrix * const Massmatrix;
+        gsl_vector_complex * const eigenvaluealpha;
+        gsl_vector * const eigenvaluebeta;
+
+        gsl_matrix_complex * const eigenvector;
+        gsl_matrix* times(gsl_matrix* matrix1, gsl_matrix* matrix2) const;
 
         virtual ~Eigenvalue();
 
         gsl_matrix* getHessiantorsionangle() const;
 
-        gsl_vector* getEigenvalue() const;
+        void setSingularvalue() const;
 
+        gsl_vector* getSingularvalue() const;
+
+        gsl_vector * const singularvalue;
     };
 
 

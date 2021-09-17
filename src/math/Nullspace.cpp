@@ -110,6 +110,31 @@ Nullspace::~Nullspace ()
   gsl_matrix_free(HydrophobicBondNullspace);
 }
 */
+
+gsl_vector* Nullspace::buildDofRigid(){
+    gsl_vector_set_zero(m_rigidCovBonds);
+    gsl_matrix* N = getBasis();
+    for(int i=0; i<n; i++){
+        bool moving=false;
+
+        for(int j=0; j<N->size2; j++){
+            double val = fabs( gsl_matrix_get(N,i,j) );
+            if( val > RIGID_TOL ) {
+                moving = true;
+                break;
+            }
+        }
+
+        // at least one entry was greater than threshold --> dihedral is coordinated
+        if( !moving ) {
+            gsl_vector_set(m_rigidCovBonds,i,1); /// binary list of rigid dihedrals, complement to coordinated version
+        }
+    }
+    return m_rigidCovBonds;
+}
+
+
+
 /** Analyzes which dihedrals and hydrogen bonds are rigidified by constraints */
 void Nullspace::performRigidityAnalysis(gsl_matrix *HBondJacobian, gsl_matrix *DBondJacobian, gsl_matrix *HydrophobicBondJacobian)
 {

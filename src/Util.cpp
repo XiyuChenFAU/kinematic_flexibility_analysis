@@ -131,6 +131,17 @@ vector<int>& Util::split( const string &s, char delim, vector<int> &numbers ) {
 	return numbers;
 }
 
+vector<double>& Util::split( const string &s, char delim, vector<double> &numbers ) {
+    numbers.clear();
+    stringstream ss(s);
+    string item;
+    while( getline(ss, item, delim) ){
+        double itemNum = atof(item.c_str());
+        numbers.push_back(itemNum);
+    }
+    return numbers;
+}
+
 vector<string> Util::split( const string& s, char delim ) {
 	vector<string> words;
 	split(s, delim, words);

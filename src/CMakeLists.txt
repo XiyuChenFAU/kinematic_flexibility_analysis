@@ -51,6 +51,7 @@ add_library( libKGS
 		applications/options/AlignOptions.h
 		applications/options/HierarchyOptions.h
 		applications/options/DeerOptions.h
+		applications/options/VibrationentropyOptions.h
 		planners/SamplingPlanner.h
 		planners/DihedralRRT.h
 		planners/RRTPlanner.h
@@ -119,6 +120,7 @@ add_library( libKGS
 		applications/options/AlignOptions.cpp
 		applications/options/HierarchyOptions.cpp
 		applications/options/DeerOptions.cpp
+		applications/options/VibrationentropyOptions.cpp
         planners/SamplingPlanner.cpp
         planners/DihedralRRT.cpp
         planners/RRTPlanner.cpp
@@ -166,6 +168,8 @@ add_library( libKGS
         math/Nullspace.h
         math/NullspaceSVD.cpp
         math/NullspaceSVD.h
+		math/Eigenvalue.cpp
+		math/Eigenvalue.h
         loopclosure/ExactIK.cpp
         loopclosure/ExactIK.h
         core/dofs/DOF.cpp
@@ -254,6 +258,7 @@ add_executable( kgs_hierarchy       applications/MainHierarchy.cpp )
 #add_executable( kgs_mcmc            applications/MainMCMC.cpp )
 add_executable( kgs_test            applications/MainTest.cpp )
 add_executable( kgs_relative_transition            applications/MainRelativeTransition.cpp )
+add_executable( kgs_vibrational_entropy            applications/Mainvibrationentropy.cpp )
 
 target_link_libraries( kgs_explore          libKGS ${GSL_LIBRARIES} )
 target_link_libraries( kgs_rigidity         libKGS ${GSL_LIBRARIES} )
@@ -268,7 +273,8 @@ target_link_libraries( kgs_hierarchy        libKGS ${GSL_LIBRARIES} )
 #target_link_libraries( kgs_mcmc             libKGS ${GSL_LIBRARIES} )
 target_link_libraries( kgs_test        libKGS ${GSL_LIBRARIES} )
 target_link_libraries( kgs_relative_transition             libKGS ${GSL_LIBRARIES} )
-
+target_link_libraries( kgs_relative_transition             libKGS ${GSL_LIBRARIES} )
+target_link_libraries( kgs_vibrational_entropy             libKGS ${GSL_LIBRARIES} )
 set( EXECUTABLE_OUTPUT_PATH ${PROJECT_BINARY_DIR} )
 
 

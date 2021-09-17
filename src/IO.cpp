@@ -191,6 +191,7 @@ Molecule* IO::readPdb (
 
       Coordinate pos(x, y, z);
       Atom* atom = molecule->addAtom(hetatm, chain_name, res_name, res_id, atom_name, atom_id, pos);
+      if(hetatm){atom->setligand();}
 
       float occupancy = 0.0;
       if(line.length()>=59) occupancy = atof(line.substr(56+offset,4).c_str());
@@ -1798,6 +1799,93 @@ void IO::writePyMolScript(Molecule * rigidified, string pdb_file, string output_
   pymol_script.close();
 }
 
+void IO::writePyMolrigidScript(string pdb_file, string output_file_name, Molecule* iniMolecule) {
+
+    ofstream pymol_script( output_file_name.c_str() );
+
+    string render_style;
+
+    ostringstream flexible;
+    flexible << "create Flexible, ";
+
+    pymol_script << "# Rigidified dihedral angle and movable dihedral angle" << endl << "#" << endl;
+    pymol_script << "# Original by Dan Farrell, Brandon Hespenheide." << endl;
+    pymol_script << "# Arizona State University" << endl;
+    pymol_script << "# Adapted by Xiyu." << endl;
+    pymol_script << "# Friedrich-Alexander University of Erlangen-Nuremberg" << endl;
+    pymol_script << "############################################################" << endl << endl;
+
+    pymol_script << "from pymol import cmd" << endl;
+    pymol_script << "from pymol.cgo import *" << endl << endl;
+
+    // Some final global attributes to set.
+    //////////////////////////////////////////////////////////////////////
+    pymol_script << "bg_color white" << endl;
+
+    //////////////////////////////////////////////////////////////////////
+    pymol_script << "load " << pdb_file << endl << endl;
+    pymol_script << "set line_width = 1" << endl;
+    pymol_script << "color yellow" << endl << endl;
+
+    /// initial molecule (nothing collapsed)
+
+    iniMolecule->m_conf->setrigiddofid();
+
+    if(iniMolecule) {
+        for(int i=0;i<iniMolecule->m_spanningTree->all_dof_id.size();i++){
+            int dof_id_state = iniMolecule->m_spanningTree->all_dof_id[i];
+            int atomid1 = iniMolecule->m_spanningTree->getDOF(i)->dofatomid().first;
+            int atomid2 = iniMolecule->m_spanningTree->getDOF(i)->dofatomid().second;
+            if(dof_id_state<0.5) {
+                pymol_script << "distance protein = id " << atomid1 << " , id " << atomid2 << endl;
+            }
+            else if(dof_id_state>1.5) {
+                pymol_script << "distance rigidified = id " << atomid1 << " , id " << atomid2 << endl;
+            }
+            else{ ///Default bonds, modeled as torsional
+                pymol_script << "distance ligand = id " << atomid1 << " , id " << atomid2 << endl;
+            }
+        }
+        /*
+        for (eit = iniMolecule->m_spanningTree->m_cycleAnchorEdges.begin();
+             eit != iniMolecule->m_spanningTree->m_cycleAnchorEdges.end(); eit++) {
+            site_1 = eit->first->getBond()->m_atom1->getId();
+            site_2 = eit->first->getBond()->m_atom2->getId();
+            if(eit->first->getBond()->isHBond()) {
+                pymol_script << "distance allHbonds = id " << site_1 << " , id " << site_2 << endl;
+            }
+            else if(eit->first->getBond()->isHydrophobicBond()) {
+                pymol_script << "distance allHydrophobics = id " << site_1 << " , id " << site_2 << endl;
+            }
+            else{ ///Default bonds, modeled as torsional
+                pymol_script << "distance allCycleCovBonds = id " << site_1 << " , id " << site_2 << endl;
+            }
+        }
+         */
+    }
+
+    pymol_script << "color red, ligand" << endl;
+    pymol_script << "color yellow, rigidified" << endl;
+    pymol_script << "color deepteal, protein" << endl;
+   /* pymol_script << "color cyan, mobileHydrophobics" << endl;
+    pymol_script << "color black, allDBonds" << endl;
+    pymol_script << "color gray60, mobileDBonds" << endl;
+    pymol_script << "color lightmagenta, allCycleCovBonds" << endl;
+    pymol_script << "color deeppurple, mobileCycleCovBonds" << endl;*/
+    pymol_script << "hide labels" << endl;
+    //////////////////////////////////////////////////////////////////////
+
+    render_style = "lines";
+
+    //////////////////////////////////////////////////////////////////////
+    pymol_script << "bg_color white" << endl;
+    pymol_script << "orient" << endl;
+
+    pymol_script << "show cartoon" << endl;
+
+    pymol_script.close();
+}
+
 
 void IO::writeRBs(Molecule * protein, string output_file_name){
 
@@ -1861,12 +1949,20 @@ void IO::writeStats(Molecule * protein, string output_file_name, Molecule* rigid
     if (rigidified) { ///rigidified is a protein with collapsed rigid bodies
       output << "Number of rigid clusters: " << rigidified->m_conf->m_numClusters << endl;
       output << "Size of biggest cluster: " << rigidified->m_conf->m_maxSize << endl;
-      output << "Index of biggest cluster: " << rigidified->m_conf->m_maxIndex << endl;
+      output << "Index of biggest cluster: " << rigidified->m_conf->m_maxIndex << endl<< endl;
     } else { ///otherwise use normal protein
       output << "Number of rigid clusters: " << protein->m_conf->m_numClusters << endl;
       output << "Size of biggest cluster: " << protein->m_conf->m_maxSize << endl;
-      output << "Index of biggest cluster: " << protein->m_conf->m_maxIndex << endl;
+      output << "Index of biggest cluster: " << protein->m_conf->m_maxIndex << endl<< endl;
     }
+
+      output << "************* Statistics on ligand *************" << endl;
+      output << "Number of ligand atoms: " << protein->getatomligandnum()<< endl;
+      output << "Number of DOFs in ligands: " << protein->m_spanningTree->ligand_dof_id_num << endl;
+      output << "Number of cycle-DOFs in ligands: " << protein->m_spanningTree->ligand_cycledof_id_num << endl;
+      output << "Number of DOFs in binding: " << protein->m_spanningTree->binding_dof_id_num << endl;
+      output << "Number of rigidified DOFs in ligands: " << protein->m_conf->getNumRigidDihedralsligand()
+             << endl;
   }
   output.close();
 
@@ -2301,5 +2397,4 @@ void IO::writeNewSample(Configuration *conf, Configuration *ref, int sample_num,
 
   }
 }
-
 

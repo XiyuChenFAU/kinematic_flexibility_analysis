@@ -35,11 +35,15 @@ IN THE SOFTWARE.
 #include <set>
 #include <math/SVDGSL.h>
 #include <math/SVDMKL.h>
+#include <math/Eigenvalue.h>
 #include <gsl/gsl_matrix_double.h>
 #include <gsl/gsl_sort_vector_double.h> //provides vector sorting
 #include <math/gsl_helpers.h>
 #include <math/NullspaceSVD.h>
+#include <math/Eigenvalue.h>
 #include <gsl/gsl_matrix.h>
+#include <gsl/gsl_vector.h>
+#include "Grid.h"
 
 #include "Configuration.h"
 #include "Molecule.h"
@@ -56,11 +60,20 @@ double jacobianAndNullspaceTime = 0;
 double rigidityTime = 0;
 
 gsl_matrix* Configuration::CycleJacobian = nullptr;
+//gsl_matrix* Configuration::CycleJacobianligand = nullptr;
+//gsl_matrix* Configuration::CycleJacobianentropy = nullptr;
+gsl_matrix* Configuration::CycleJacobiannocoupling = nullptr;
 gsl_matrix* Configuration::HBondJacobian = nullptr;
 gsl_matrix* Configuration::HydrophobicBondJacobian = nullptr;
 gsl_matrix* Configuration::DBondJacobian = nullptr;
 Configuration* Configuration::CycleJacobianOwner = nullptr;
 SVD* Configuration::JacobianSVD = nullptr;
+SVD* Configuration::JacobianSVDnocoupling = nullptr;
+//SVD* Configuration::JacobianSVDligand = nullptr;
+//gsl_matrix* Configuration::Hessianmatrix_cartesian = nullptr;
+gsl_matrix* Configuration::Massmatrix=nullptr;
+gsl_matrix* Configuration::distancematrix=nullptr;
+gsl_matrix* Configuration::coefficientmatrix=nullptr;
 
 //gsl_matrix* Configuration::ClashAvoidingJacobian = nullptr;
 //Nullspace* Configuration::ClashAvoidingNullSpace = nullptr;
@@ -68,6 +81,12 @@ SVD* Configuration::JacobianSVD = nullptr;
 Configuration::Configuration(Molecule * mol):
   m_molecule(mol),
   nullspace(nullptr),
+  nullspacenocoupling(nullptr),
+  CycleJacobianentropy(nullptr),
+  CycleJacobianentropycoupling(nullptr),
+  CycleJacobianentropynocoupling(nullptr),
+  Entropyeigen(nullptr),
+  Hessianmatrix_cartesian(nullptr),
   m_parent(nullptr),
   m_dofs_global(nullptr),
   m_treeDepth(0)
@@ -154,6 +173,36 @@ Configuration::~Configuration(){
   //m_sortedRBs.clear();
   if(nullspace)
     delete nullspace;
+
+  //if(nullspaceligand)
+      //delete nullspaceligand;
+
+  if(nullspacenocoupling)
+      delete nullspacenocoupling;
+
+  if(CycleJacobianentropy)
+      gsl_matrix_free(CycleJacobianentropy);
+
+  if(CycleJacobianentropycoupling)
+      gsl_matrix_free(CycleJacobianentropycoupling);
+
+  if(CycleJacobianentropynocoupling)
+      gsl_matrix_free(CycleJacobianentropynocoupling);
+
+  if(Hessianmatrix_cartesian)
+      gsl_matrix_free(Hessianmatrix_cartesian);
+
+  if(Massmatrix)
+      gsl_matrix_free(Massmatrix);
+
+  if(Entropyeigen)
+      delete Entropyeigen;
+
+  if(distancematrix)
+      gsl_matrix_free(distancematrix);
+
+  if(coefficientmatrix)
+      gsl_matrix_free(coefficientmatrix);
 
   if( m_parent!=nullptr )
     m_parent->m_children.remove(this);
@@ -460,6 +509,105 @@ void Configuration::Print () {
   cout << endl;
 }
 
+bool Configuration::checknocoupling() {
+    for (std::pair<KinEdge*,KinVertex*>& edge_vertex_pair: m_molecule->m_spanningTree->m_cycleAnchorEdges) {
+        KinEdge *edge_ptr = edge_vertex_pair.first;
+
+        KinVertex *vertex1 = edge_ptr->StartVertex;
+        KinVertex *vertex2 = edge_ptr->EndVertex;
+
+        int vertex1ligand = 0;
+        int vertex2ligand = 0;
+        if (vertex1->isligand()) { vertex1ligand = 1; }
+        if (vertex2->isligand()) { vertex2ligand = 1; }
+
+
+        if (vertex1ligand + vertex2ligand == 1) { return false; }
+    }
+
+    return true;
+}
+
+
+void Configuration::computeJacobiansnocoupling() {
+//  log("debug")<<"computeJacobians"<<endl;
+
+    computeJacobians();
+
+    int row_num=CycleJacobian->size1;
+    int col_num=CycleJacobian->size2;
+
+    if(CycleJacobiannocoupling==nullptr){
+        CycleJacobiannocoupling = gsl_matrix_calloc(row_num,col_num);
+        JacobianSVDnocoupling = SVD::createSVD(CycleJacobiannocoupling);//new SVDMKL(CycleJacobiannocoupling);
+    }else if(CycleJacobiannocoupling->size1==row_num && CycleJacobiannocoupling->size2==col_num){
+        gsl_matrix_set_zero(CycleJacobiannocoupling);
+    }else{
+        gsl_matrix_free(CycleJacobiannocoupling);
+        delete JacobianSVDnocoupling;
+        CycleJacobiannocoupling = gsl_matrix_calloc(row_num,col_num);
+        JacobianSVDnocoupling = SVD::createSVD(CycleJacobiannocoupling);//new SVDMKL(CycleJacobiannocoupling);
+    }
+
+    gsl_matrix_memcpy(CycleJacobiannocoupling, CycleJacobian);
+
+    // for each cycle, fill in the Jacobian entries
+    int i=0; // cycleAnchorIndices, all constraints together
+    for (std::pair<KinEdge*,KinVertex*>& edge_vertex_pair: m_molecule->m_spanningTree->m_cycleAnchorEdges)
+    {
+        // get end-effectors
+        KinEdge* edge_ptr = edge_vertex_pair.first;
+        Bond * bond_ptr = edge_ptr->getBond();
+
+        //End-effectors and their positions, corresponds to a and b
+        Atom* atom1 = bond_ptr->m_atom1;
+        Atom* atom2 = bond_ptr->m_atom2;
+
+        KinVertex* vertex1 = edge_ptr->StartVertex;
+        KinVertex* vertex2 = edge_ptr->EndVertex;
+        if(find(vertex1->m_rigidbody->Atoms.begin(),vertex1->m_rigidbody->Atoms.end(),atom1) == vertex1->m_rigidbody->Atoms.end()){
+            vertex1=edge_ptr->EndVertex;
+            vertex2=edge_ptr->StartVertex;
+        }
+
+        int vertex1ligand=0;
+        int vertex2ligand=0;
+        if(vertex1->isligand()){vertex1ligand=1;}
+        if(vertex2->isligand()){vertex2ligand=1;}
+
+
+
+        if ( vertex1ligand+vertex2ligand==1 ) {
+            gsl_vector *setzero =gsl_vector_calloc(col_num);
+            if(bond_ptr->isHydrophobicBond()){
+                gsl_matrix_set_row(CycleJacobiannocoupling, i + 0, setzero);
+            }
+            else {
+                /// These three constraints are equal for distance and hydrogen bond
+                gsl_matrix_set_row(CycleJacobiannocoupling, i + 0, setzero); //set: Matrix, row, column, what to set
+                gsl_matrix_set_row(CycleJacobiannocoupling, i + 1, setzero);
+                gsl_matrix_set_row(CycleJacobiannocoupling, i + 2, setzero);
+
+                if (!bond_ptr->isDBond()) {//Dbonds
+                    gsl_matrix_set_row(CycleJacobiannocoupling, i + 3, setzero);
+                    gsl_matrix_set_row(CycleJacobiannocoupling, i + 4, setzero);
+                }
+            }
+            gsl_vector_free(setzero);
+        }
+
+        if(bond_ptr->isDBond()){//3 constraints, 3 rel. DOF
+            i+=3;
+        }
+        else if(bond_ptr->isHydrophobicBond()){//hydrophobic bond, 1 constraint, 5 rel. DOF
+            i += 1;
+        }
+        else{ //Hbonds or default; 5 constraints, 1 rel. DOF
+            i+=5;
+        }
+    }
+}
+
 
 void Configuration::computeJacobians() {
 //  log("debug")<<"computeJacobians"<<endl;
@@ -741,6 +889,24 @@ void Configuration::computeJacobians() {
     }
   }
 }
+
+
+int Configuration::getNumRigidDihedralsligand() {
+    Nullspace* Nulls = getNullspace();
+    gsl_vector* rigiddof = Nulls->buildDofRigid();
+
+    for(int i=0;i<rigiddof->size;i++){
+        if(gsl_vector_get(rigiddof, i)>0.9){
+            if (m_molecule->m_spanningTree->getCycleDOF(i)->isDOFligand()) {
+                numligandRigidDihedrals++;
+            }
+        }
+    }
+
+    return numligandRigidDihedrals;
+
+}
+
 
 //------------------------------------------------------------
 //We compute another Jacobian that also considers motion along clash normal directions as a constraint
@@ -1162,10 +1328,340 @@ gsl_matrix* Configuration::getCycleJacobian()
 Nullspace* Configuration::getNullspace()
 {
   if(nullspace==nullptr){
-    computeCycleJacobianAndNullSpace();
+      computeCycleJacobianAndNullSpace();
   }
 
   return nullspace;
+}
+
+Nullspace* Configuration::getNullspacenocoupling()
+{
+    if(nullspacenocoupling==nullptr){
+        computeJacobiansnocoupling();
+
+
+        if (JacobianSVDnocoupling!=nullptr) {
+            nullspacenocoupling = new NullspaceSVD(JacobianSVDnocoupling);
+            nullspacenocoupling->updateFromMatrix();
+        }
+    }
+
+    return nullspacenocoupling;
+}
+
+/*Nullspace* Configuration::getNullspaceligand(){
+    if(nullspaceligand==nullptr){
+        computeCycleJacobianAndNullSpace();
+        int row_num = CycleJacobian->size1;
+        int col_num = CycleJacobian->size2-m_molecule->m_spanningTree->ligand_cycledof_id.size(); // number of DOFs in cycles
+        if(CycleJacobianligand==nullptr){
+            CycleJacobianligand = gsl_matrix_calloc(row_num,col_num);
+            JacobianSVDligand = SVD::createSVD(CycleJacobianligand);//new SVDMKL(CycleJacobianligand);
+        }else if(CycleJacobianligand->size1==row_num && CycleJacobianligand->size2==col_num){
+            gsl_matrix_set_zero(CycleJacobianligand);
+        }else{
+            gsl_matrix_free(CycleJacobianligand);
+            delete JacobianSVDligand;
+            CycleJacobianligand = gsl_matrix_calloc(row_num,col_num);
+            JacobianSVDligand = SVD::createSVD(CycleJacobianligand);//new SVDMKL(CycleJacobian);
+        }
+        int q=0;
+        for(int i=0; i<CycleJacobian->size2; i++){
+            if (std::find(m_molecule->m_spanningTree->ligand_cycledof_id.begin(), m_molecule->m_spanningTree->ligand_cycledof_id.end(), i) == m_molecule->m_spanningTree->ligand_cycledof_id.end()){
+                gsl_vector* v;
+                v=gsl_vector_alloc(row_num);
+                gsl_matrix_get_col(v, CycleJacobian, i);
+                gsl_matrix_set_col(CycleJacobianligand, i-q, v);
+                gsl_vector_free(v);
+            }
+            else{
+                q++;
+            }
+        }
+    }
+
+
+
+    if (JacobianSVDligand!=nullptr) {
+        nullspaceligand = new NullspaceSVD(JacobianSVDligand);
+        nullspaceligand->updateFromMatrix();
+    }
+
+
+    return nullspaceligand;
+}
+*/
+
+void Configuration::computeMassmatrix(){
+
+    int row_num = m_molecule->getAtoms().size()*3;
+    Massmatrix = gsl_matrix_calloc(row_num, row_num);
+    gsl_matrix_set_zero(Massmatrix);
+
+    int t = 0;
+    for (vector<Atom *>::const_iterator itr = m_molecule->getAtoms().begin();
+         itr != m_molecule->getAtoms().end(); ++itr) {
+        gsl_matrix_set(Massmatrix, 3 * t, 3 * t, (*itr)->getMass());
+        gsl_matrix_set(Massmatrix, 3 * t + 1, 3 * t + 1, (*itr)->getMass());
+        gsl_matrix_set(Massmatrix, 3 * t + 2, 3 * t + 2, (*itr)->getMass());
+        t++;
+    }
+}
+
+void Configuration::computedistancematrix(Molecule* mol){
+    int row_num = mol->getAtoms().size();
+    distancematrix = gsl_matrix_calloc(row_num, row_num);
+    gsl_matrix_set_zero(distancematrix);
+    coefficientmatrix = gsl_matrix_calloc(row_num, row_num);
+    gsl_matrix_set_zero(coefficientmatrix);
+
+    int t = 0;
+    for (vector<Atom *>::const_iterator itr = mol->getAtoms().begin();
+         itr != mol->getAtoms().end(); ++itr) {
+        int p=0;
+        for (vector<Atom *>::const_iterator itnew = mol->getAtoms().begin();
+             itnew != mol->getAtoms().end(); ++itnew) {
+            if (p>t){
+                double distance = (*itr)->m_position.distanceTo((*itnew)->m_position);
+                double coefficient = pow(distance, (-exp(1)));
+                double sqr = pow(distance, 2) ;
+                gsl_matrix_set(distancematrix, t, p, sqr);
+                gsl_matrix_set(distancematrix, p, t, sqr);
+                gsl_matrix_set(coefficientmatrix, t, p, coefficient);
+                gsl_matrix_set(coefficientmatrix, p, t, coefficient);
+            }
+            p++;
+        }
+        t++;
+    }
+}
+
+void Configuration::computeHessiancartesian(double cutoff, double coefficientvalue, double vdwenergyvalue,Molecule* mol){
+    if(distancematrix==nullptr || coefficientmatrix==nullptr){
+        computedistancematrix(mol);
+    }
+
+    int row_num = m_molecule->getAtoms().size()*3;
+    if(Hessianmatrix_cartesian==nullptr){
+        Hessianmatrix_cartesian = gsl_matrix_calloc(row_num,row_num);
+    }else if( Hessianmatrix_cartesian->size1==row_num &&  Hessianmatrix_cartesian->size2==row_num){
+        gsl_matrix_set_zero(Hessianmatrix_cartesian);
+    }else{
+        gsl_matrix_free(Hessianmatrix_cartesian);
+        Hessianmatrix_cartesian = gsl_matrix_calloc(row_num,row_num);
+    }
+
+    int t = 0;
+    for (vector<Atom *>::const_iterator itr = m_molecule->getAtoms().begin();
+         itr != m_molecule->getAtoms().end(); ++itr) {
+        //if (!(*itr)->getligand()) {
+        Atom* atom1 = *itr;
+        vector<Atom*> neighbors = m_molecule->getGrid()->getNeighboringAtomsVDW(atom1,true,true,true,true,cutoff);
+        for (vector<Atom *>::const_iterator itnew = neighbors.begin(); itnew != neighbors.end(); ++itnew) {
+            //if (!(*itnew)->getligand()) {
+            Atom* atom2 = *itnew;
+            auto findindex = find(m_molecule->getAtoms().begin(),m_molecule->getAtoms().end(), atom2);
+            if (findindex != m_molecule->getAtoms().end()) {
+                int p = distance(m_molecule->getAtoms().begin(),findindex);
+                double atomContribution, allcutoff;
+                double distance = (*itr)->m_position.distanceTo((*itnew)->m_position);
+                if(vdwenergyvalue<9999.0){
+                    double ratio, vdw_r1, vdw_d12, epsilon1, epsilon_12;
+                    vdw_r1 = atom1->getRadius();
+                    epsilon1 = atom1->getEpsilon();
+                    vdw_d12 = (vdw_r1 + atom2->getRadius())/2.0; // from CHARMM: arithmetic mean
+                    ratio = vdw_d12/distance;
+                    epsilon_12 = sqrt(epsilon1 * (atom2->getEpsilon()));
+                    atomContribution = 4 * epsilon_12 * (pow(ratio,12) - pow(ratio,6));
+                    allcutoff = vdwenergyvalue;
+                }
+                else{
+                    atomContribution=distance;
+                    allcutoff = cutoff;
+                }
+                /*if (atomContribution < allcutoff && p > t) {
+                    double coefficientxx = pow(distance, (-exp(1))) * coefficientvalue;
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t, 3 * p, coefficient);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t + 1, 3 * p + 1, coefficient);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t + 2, 3 * p + 2, coefficient);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p, 3 * t, coefficient);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p + 1, 3 * t + 1, coefficient);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p + 2, 3 * t + 2, coefficient);
+                }*/
+                if (atomContribution < allcutoff && p > t) {
+                    double distancenow = (*itr)->m_position.distanceTo((*itnew)->m_position);
+                    double distanceorigin = gsl_matrix_get(distancematrix, p,t);
+                    double coeforigin = gsl_matrix_get(coefficientmatrix,p,t);
+                    double coefficientxx = coeforigin * coefficientvalue * (-8 * ((*itr)->m_position.x - (*itnew)->m_position.x) * ((*itr)->m_position.x - (*itnew)->m_position.x) - 4 * (pow(distancenow, 2)- distanceorigin));
+                    double coefficientyy = coeforigin * coefficientvalue * (-8 * ((*itr)->m_position.y - (*itnew)->m_position.y) * ((*itr)->m_position.x - (*itnew)->m_position.x) - 4 * (pow(distancenow, 2)- distanceorigin));
+                    double coefficientzz = coeforigin * coefficientvalue * (-8 * ((*itr)->m_position.z - (*itnew)->m_position.z) * ((*itr)->m_position.x - (*itnew)->m_position.x) - 4 * (pow(distancenow, 2)- distanceorigin));
+                    double coefficientxy = coeforigin * coefficientvalue * (-8 * ((*itr)->m_position.x - (*itnew)->m_position.x) * ((*itr)->m_position.y - (*itnew)->m_position.y));
+                    double coefficientxz = coeforigin * coefficientvalue * (-8 * ((*itr)->m_position.x - (*itnew)->m_position.x) * ((*itr)->m_position.z - (*itnew)->m_position.z));
+                    double coefficientyz = coeforigin * coefficientvalue * (-8 * ((*itr)->m_position.y - (*itnew)->m_position.y) * ((*itr)->m_position.z - (*itnew)->m_position.z));
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t, 3 * p, coefficientxx);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p, 3 * t, coefficientxx);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t + 1, 3 * p + 1, coefficientyy);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p + 1, 3 * t + 1, coefficientyy);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t + 2, 3 * p + 2, coefficientzz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p + 2, 3 * t + 2, coefficientzz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t, 3 * p + 1, coefficientxy);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t + 1, 3 * p, coefficientxy);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p, 3 * t + 1, coefficientxy);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p + 1, 3 * t, coefficientxy);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t, 3 * p + 2, coefficientxz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t + 2, 3 * p, coefficientxz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p, 3 * t + 2, coefficientxz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p + 2, 3 * t, coefficientxz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t + 1, 3 * p + 2, coefficientyz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * t + 2, 3 * p + 1, coefficientyz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p + 1, 3 * t + 2, coefficientyz);
+                    gsl_matrix_set(Hessianmatrix_cartesian, 3 * p + 2, 3 * t + 1, coefficientyz);
+                }
+            }
+        }
+        t++;
+    }
+}
+
+void Configuration::computeCycleJacobianentropyforall(){
+    int row_num = m_molecule->getAtoms().size()*3;
+    //int row_num = m_molecule->getAtoms().size()*3-m_molecule->getligands().size()*3;
+    int col_num = m_molecule->m_spanningTree->getNumDOFs(); // number of DOFs in cycles
+    CycleJacobianentropy = gsl_matrix_calloc(row_num, col_num);
+
+    int t = 0;
+    for (vector<Atom *>::const_iterator itr = m_molecule->getAtoms().begin();
+         itr != m_molecule->getAtoms().end(); ++itr) {
+        //if (!(*itr)->getligand()) {
+        KinVertex *vertex1 = (*itr)->getRigidbody()->getVertex();
+        Coordinate p1 = (*itr)->m_position;
+        while (vertex1->m_parent->m_rigidbody != nullptr && vertex1->m_parent != nullptr) {
+            KinVertex *parent = vertex1->m_parent;
+            KinEdge *p_edge = parent->findEdge(vertex1);
+            int dof_id = p_edge->getDOF()->getIndex();
+            int cycle_dof_id = p_edge->getDOF()->getCycleIndex();
+            if (dof_id != -1) { // this edge is a DOF  && !p_edge->getDOF()->isDOFligand()
+                Math3D::Vector3 derivativeP1 = p_edge->getDOF()->getDerivative(p1);
+                gsl_matrix_set(CycleJacobianentropy, 3 * t, dof_id, derivativeP1.x);
+                gsl_matrix_set(CycleJacobianentropy, 3 * t + 1, dof_id, derivativeP1.y);
+                gsl_matrix_set(CycleJacobianentropy, 3 * t + 2, dof_id, derivativeP1.z);
+            }
+            vertex1 = parent;
+        }
+        t++;
+        //}
+    }
+}
+
+void Configuration::computeCycleJacobianentropy(Nullspace* Nu,std::string nocoupling){
+    if (CycleJacobianentropy == nullptr) {
+        computeCycleJacobianentropyforall();
+    }
+
+    int row_num = m_molecule->getAtoms().size()*3;
+    int col_num = m_molecule->m_spanningTree->getNumDOFs();
+
+    gsl_vector* rigiddof = Nu->buildDofRigid();
+    gsl_matrix* CycleJacobianentropy1 = gsl_matrix_calloc(row_num, col_num);
+    gsl_matrix_memcpy(CycleJacobianentropy1, CycleJacobianentropy);
+
+    gsl_vector* setzero =gsl_vector_calloc(row_num);
+    gsl_vector_set_zero(setzero);
+    for(int i=0;i<rigiddof->size;i++){
+        if(gsl_vector_get(rigiddof, i)>0.9){
+            int rigid_dof_id = m_molecule->m_spanningTree->getCycleDOF(i)->getIndex();
+            gsl_matrix_set_col(CycleJacobianentropy1, rigid_dof_id, setzero);
+        }
+    }
+    gsl_vector_free(setzero);
+    gsl_vector_free(rigiddof);
+    if(nocoupling=="true"){
+        CycleJacobianentropynocoupling = gsl_matrix_calloc(row_num, col_num);
+        gsl_matrix_memcpy(CycleJacobianentropynocoupling,CycleJacobianentropy1);
+    }
+
+    if(nocoupling=="false"){
+        CycleJacobianentropycoupling = gsl_matrix_calloc(row_num, col_num);
+        gsl_matrix_memcpy(CycleJacobianentropycoupling,CycleJacobianentropy1);
+    }
+    gsl_matrix_free(CycleJacobianentropy1);
+}
+
+void Configuration::Hessianmatrixentropy(double cutoff, double coefficientvalue,double vdwenergyvalue, Nullspace* Nu, Molecule* mol, bool proteinonly, std::string nocoupling){
+    if (Massmatrix == nullptr) {
+        computeMassmatrix();
+    }
+
+    computeHessiancartesian(cutoff,coefficientvalue,vdwenergyvalue, mol);
+
+    if (CycleJacobianentropy == nullptr) {
+        computeCycleJacobianentropyforall();
+    }
+
+    int row_num = m_molecule->getAtoms().size()*3;
+    int col_num = m_molecule->m_spanningTree->getNumDOFs();
+    gsl_matrix* CycleJacobianentropyinput = gsl_matrix_calloc(row_num, col_num);
+    if(nocoupling=="true" && CycleJacobianentropynocoupling==nullptr){
+        computeCycleJacobianentropy(Nu,nocoupling);
+    }
+
+    if(nocoupling=="false" && CycleJacobianentropycoupling==nullptr){
+        computeCycleJacobianentropy(Nu,nocoupling);
+    }
+
+    if(nocoupling=="true"){gsl_matrix_memcpy(CycleJacobianentropyinput, CycleJacobianentropynocoupling);}
+    else{gsl_matrix_memcpy(CycleJacobianentropyinput, CycleJacobianentropycoupling);}
+
+    if(proteinonly){
+        gsl_vector* setzero =gsl_vector_calloc(row_num);
+        gsl_vector* setzerorow =gsl_vector_calloc(col_num);
+        gsl_vector_set_zero(setzero);
+        gsl_vector_set_zero(setzerorow);
+        for(int i=0;i<m_molecule->m_spanningTree->ligand_dof_id.size();i++){
+            int rigid_dof_id = m_molecule->m_spanningTree->ligand_dof_id[i];
+            gsl_matrix_set_col(CycleJacobianentropyinput, rigid_dof_id, setzero);
+        }
+
+        int t=0;
+        for (vector<Atom *>::const_iterator itr = m_molecule->getAtoms().begin();
+             itr != m_molecule->getAtoms().end(); ++itr) {
+            if((*itr)->getligand()){
+                gsl_matrix_set_row(CycleJacobianentropyinput, 3 * t, setzerorow);
+                gsl_matrix_set_row(CycleJacobianentropyinput, 3 * t + 1, setzerorow);
+                gsl_matrix_set_row(CycleJacobianentropyinput, 3 * t + 2, setzerorow);
+            }
+            t++;
+        }
+        gsl_vector_free(setzero);
+        gsl_vector_free(setzerorow);
+    }
+    if(CycleJacobianentropyinput!=nullptr && Hessianmatrix_cartesian!=nullptr && Massmatrix!=nullptr){
+        if(Entropyeigen){
+            delete Entropyeigen;
+            Entropyeigen = new Eigenvalue(CycleJacobianentropyinput,Hessianmatrix_cartesian,Massmatrix);
+        }
+        else{
+            Entropyeigen = new Eigenvalue(CycleJacobianentropyinput,Hessianmatrix_cartesian,Massmatrix);
+        }
+
+    }
+    gsl_matrix_free(CycleJacobianentropyinput);
+}
+
+void Configuration::setrigiddofid(){
+    Nullspace* Nu = getNullspace();
+    gsl_vector* rigiddof = Nu->buildDofRigid();
+    for(int i=0;i<rigiddof->size;i++){
+        if(gsl_vector_get(rigiddof, i)>0.9){
+            int rigid_dof_id = m_molecule->m_spanningTree->getCycleDOF(i)->getIndex();
+            m_molecule->m_spanningTree->all_dof_id[rigid_dof_id]=2;
+        }
+    }
+}
+
+
+Eigenvalue* Configuration::geteigenvalue(){
+    return Entropyeigen;
 }
 
 gsl_matrix* Configuration::getHydrophobicJacobian()
@@ -1195,3 +1691,4 @@ std::list<Configuration*>& Configuration::getChildren()
 {
   return m_children;
 }
+

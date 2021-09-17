@@ -36,6 +36,7 @@ IN THE SOFTWARE.
 #include <tuple>
 
 #include "math/Nullspace.h"
+#include "math/Eigenvalue.h"
 #include "core/graph/KinGraph.h"
 
 class Molecule;
@@ -124,6 +125,10 @@ class Configuration
   /** Return the cycle jacobian. Calls computeJacobians if CycleJacobian is not up to date */
   gsl_matrix* getCycleJacobian();
   Nullspace* getNullspace();    ///< Compute the nullspace (if it wasn't already) and return it
+  //Nullspace* getNullspaceligand();  ///< Compute the nullspace for ligand (if it wasn't already) and return it
+  Nullspace* getNullspacenocoupling();
+  void Hessianmatrixentropy(double cutoff=20.0, double coefficientvalue=1.0, double vdwenergyvalue=10000.0, Nullspace* Nu=nullptr, Molecule* mol=nullptr, bool proteinonly=false, std::string nocoupling="true");  ///< Compute the nullspace for vibrational entropy (if it wasn't already) and return it
+  Eigenvalue* geteigenvalue();
   gsl_matrix* getHydrophobicJacobian();
   gsl_matrix* getHydrogenJacobian();
   gsl_matrix* getDistanceJacobian();
@@ -136,10 +141,15 @@ class Configuration
 
   double siteDOFTransfer(Selection& source, Selection& sink,gsl_matrix* baseMatrix); //
   void sortFreeEnergyModes(gsl_matrix* baseMatrix, gsl_vector* singVals, gsl_vector* returnIDs); //return index list of modes sorted by free energy
+  int getNumRigidDihedralsligand();
 
+  bool checknocoupling();
   static Nullspace* ClashAvoidingNullSpace; //TODO: Make private (or even better put in ClashAvoidingMove).
+  void setrigiddofid();
+    
  protected:
 
+    int numligandRigidDihedrals=0; ///< Rigid dihedrals in ligand
   void updateGlobalTorsions();           ///< Update the global DOF-values (m_dofs_global field)
   double *m_dofs_global;                 ///< DOF-values in a global system (not relative to Atom::reference_position)
   Molecule * const m_molecule;           ///< The molecule related to the configuration
@@ -147,19 +157,39 @@ class Configuration
   std::list<Configuration*> m_children;  ///< List of child-configurations
 
   void computeCycleJacobianAndNullSpace();
+  void computeCycleJacobianentropyforall();
+  void computeCycleJacobianentropy(Nullspace* Nu,std::string nocoupling);
+  void computeMassmatrix();
+  void computedistancematrix(Molecule* mol);
+  void computeHessiancartesian(double cutoff, double coefficientvalue, double vdwenergyvalue,Molecule* mol);
   void computeJacobians();               ///< Compute non-redundant cycle jacobian and hbond-jacobian // and also HydrophobicBond-jacobian
   // Jacobian matrix of all the cycles of rigid bodies
+  void computeJacobiansnocoupling();
   static gsl_matrix* CycleJacobian; // column dimension is the number of DOFs; row dimension is 5 times the number of cycles because 2 atoms on each cycle-closing edge
+  //static gsl_matrix* CycleJacobianligand;// column dimension is the number of DOFS; row dimension is the number of cycles\//
+  //static gsl_matrix* ClashAvoidingJacobian;
+  //Nullspace* nullspaceligand;
+  //static SVD* JacobianSVDligand;
+  static gsl_matrix* CycleJacobiannocoupling;
+  gsl_matrix* CycleJacobianentropy;// column dimension is the number of DOFS; row dimension is the number of cycles\//
+  gsl_matrix* CycleJacobianentropycoupling;
+  gsl_matrix* CycleJacobianentropynocoupling;
+  gsl_matrix* Hessianmatrix_cartesian;
+  static gsl_matrix* Massmatrix;
+  static gsl_matrix* distancematrix;
+  static gsl_matrix* coefficientmatrix;
+  Eigenvalue* Entropyeigen;
   static gsl_matrix* HBondJacobian; // column dimension is the number of DOFS; row dimension is the number of cycles\//
   static gsl_matrix* HydrophobicBondJacobian; //column dimension is the number of DOFs; row dimension is the 5 times the number of Hydrophobic bond
   static gsl_matrix* DBondJacobian; //column dimension is the number of DOFs; row dimension is the 5 times the number of Hydrophobic bond
-  //static gsl_matrix* ClashAvoidingJacobian;
   static Configuration* CycleJacobianOwner;
 
   static SVD* JacobianSVD;
+  static SVD* JacobianSVDnocoupling;
   Nullspace* nullspace;                  ///< Nullspace of hbond of this configuration
-
+  Nullspace* nullspacenocoupling;
   Nullspace* nullspaceHydro;
+  
 };
 
 

@@ -76,6 +76,11 @@ int main( int argc, char* argv[] ){
       options.hydrogenbondMethod,
       options.hydrogenbondFile
   );
+    
+    if (options.setligand!=""){
+        protein->setatomligand(options.setligand);
+    }
+    
   protein->initializeTree(movingResidues,1.0,options.roots);
   string name = protein->getName();
 
@@ -198,7 +203,15 @@ int main( int argc, char* argv[] ){
   ///Write rigid bodies
   IO::writeRBs(rigidified, rbFile);
 
+  if(options.saveData <= 3) return 0;
+
+  string pyMol_rigidifiedbondid = out_path + "output/" + name + "_pyMol_" +
+                                    std::to_string((long long) sample_id)+ "_rigidifiedbondid.pml";
+  IO::writePyMolrigidScript(out_file, pyMol_rigidifiedbondid, protein);
+
   return 0;
+
+
 }
 
 

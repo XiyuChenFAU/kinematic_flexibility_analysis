@@ -81,6 +81,8 @@ class RigidityOptions {
   std::string sink;
   /** Sink/Source to identify transferred DoF between different areas. */
   std::string source;
+  /** set the ligand. */
+  std::string setligand;
 
   void print();
 

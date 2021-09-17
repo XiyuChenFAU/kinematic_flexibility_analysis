@@ -49,10 +49,14 @@ public:
   KinEdge* findEdge(const KinVertex* v) const;
   virtual void setParent(KinVertex* v);
   void print() const;
+    
+  bool isligand();
+  bool isnullligand();
 
   void forwardPropagate();
 private:
   void transformAtoms();
+  bool m_vertexligand;
 };
 
 

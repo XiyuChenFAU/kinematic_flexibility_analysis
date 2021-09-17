@@ -35,7 +35,8 @@ IN THE SOFTWARE.
 using namespace std;
 
 KinVertex::KinVertex (Rigidbody* rb_ptr):
-    m_rigidbody(rb_ptr)
+    m_rigidbody(rb_ptr),
+    m_vertexligand(false)
 {
   m_parent = nullptr;
   Visited = false;
@@ -65,6 +66,30 @@ KinEdge* KinVertex::findEdge(const KinVertex* v) const
   return nullptr;
 }
 
+
+bool KinVertex::isligand() {
+    if(m_rigidbody!=nullptr) {
+        for(auto const& atom: m_rigidbody->Atoms){
+            if(atom->getligand()) {
+                m_vertexligand=true;
+                break;
+            }
+        }
+    }
+    else{
+        m_vertexligand=true;
+    }
+    return m_vertexligand;
+}
+
+bool KinVertex::isnullligand() {
+    if(m_rigidbody!=nullptr) {
+        return true;
+    }
+    else{
+        return false;
+    }
+}
 
 void KinVertex::print() const {
   log() << "KinVertex";

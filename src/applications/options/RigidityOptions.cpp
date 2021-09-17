@@ -80,6 +80,7 @@ RigidityOptions::RigidityOptions(int argc, char* argv[])
     if(arg=="--collapseRigidEdges"){            collapseRigid = atoi(argv[++i]);                    continue; }
     if(arg=="--sink"){                          sink = argv[++i];                                   continue; }
     if(arg=="--source"){                        source = argv[++i];                                 continue; }
+    if(arg=="--setligand"){                     setligand = argv[++i];                              continue; }
 //    if(arg=="--relativeDistances"){             relativeDistances = argv[++i];                      continue; }
 
     if(arg.at(0)=='-'){
@@ -133,6 +134,7 @@ void RigidityOptions::initializeVariables(){
   collapseRigid             = 2;
   sink                      = "";
   source                    = "";
+  setligand                 = "";
 }
 
 void RigidityOptions::print(){
@@ -155,7 +157,8 @@ void RigidityOptions::print(){
   log("so")<<"  --svdCutoff "<<svdCutoff<<endl;
   log("so")<<"  --collapseRigidEdges "<<collapseRigid<<endl;
   log("so")<<"  --sink "<<sink<<endl;
-  log("so")<<"  --source "<<source<<endl<<endl;
+  log("so")<<"  --source "<<source<<endl;
+  log("so")<<"  --setligand "<<setligand<<endl<<endl;
 }
 
 void RigidityOptions::printUsage(char* pname){
@@ -185,6 +188,7 @@ void RigidityOptions::printUsage(char* pname){
   log("so")<<"  --collapseRigidEdges <0|1|2> \t: Rigid bodies after merging over rigid edges. 0: Dont merge (initial rigid bodies). 1: Collapse covalent bonds. 2: Collapse covalent and hydrogen bonds. Default 2 (real rigidity analysis)"<<endl;
   log("so")<<"  --sink <selection-pattern>\t: A pymol-like pattern that specifies sink residues in DoF transfer analysis. Default none."<<endl;
   log("so")<<"  --source <selection-pattern>\t: A pymol-like pattern that specifies source residues in DoF transfer analysis. Default none."<<endl;
+  log("so")<<"  --setligand <chain name>\t: set chain for the ligand to study vibrational entropy. Default none."<<endl;
 }
 
 

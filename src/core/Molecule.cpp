@@ -236,8 +236,27 @@ const std::vector<Atom*>& Molecule::getAtoms() const {
   return m_atoms;
 }
 
+int Molecule::getatomligandnum(){
+    if (m_ligands.empty()) {
+        for (vector<Atom *>::const_iterator itr = m_atoms.begin(); itr != m_atoms.end(); ++itr) {
+            if ((*itr)->getligand()) {
+                m_ligands.push_back(*itr);
+            }
+        }
+    }
+    return m_ligands.size();
+}
+
+const std::vector<Atom*>& Molecule::getligands() const {
+    return m_ligands;
+}
+
 std::vector<Atom*>& Molecule::getAtoms(){
   return m_atoms;
+}
+
+std::vector<Atom*>& Molecule::getligands(){
+    return m_ligands;
 }
 
 const std::list<Bond*>& Molecule::getCovBonds() const {
@@ -300,6 +319,14 @@ void Molecule::indexAtoms () {
   }
 
   m_grid = new Grid(this, m_collisionFactor);
+}
+
+void Molecule::setatomligand(std::string& chainname) {
+    for (vector<Atom*>::const_iterator itr=m_atoms.begin(); itr!=m_atoms.end(); ++itr){
+    if( (*itr)->getResidue()->getChain()->getName()== chainname ){
+        (*itr)->setligand();
+      }
+    }
 }
 
 void Molecule::setCollisionFactor(double collisionFactor)
@@ -673,7 +700,6 @@ void Molecule::buildSpanningTree(const vector<int>& rootIds) {
   vector<Atom*> roots;
   for(const int& rootId: rootIds)
     roots.push_back( getAtom(rootId) );
-
   m_spanningTree = new KinTree(rigidBodies, roots);
 }
 

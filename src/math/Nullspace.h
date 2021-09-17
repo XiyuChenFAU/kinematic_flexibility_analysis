@@ -50,6 +50,9 @@ class Nullspace {
   /** Return number of dihedral DOFs that were rigidified in the last call to RigidityAnalysis. */
   int getNumRigidDihedrals() const { return numRigidDihedrals; }
 
+
+  gsl_vector* buildDofRigid();
+
   /** Return number of h-bond dihedrals that were rigidified in the last call to RigidityAnalysis. */
   int getNumRigidHBonds() const { return numRigidHBonds; }
   int getNumRigidDBonds() const { return numRigidDBonds; }

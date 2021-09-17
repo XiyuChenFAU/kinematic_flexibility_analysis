@@ -30,6 +30,7 @@ IN THE SOFTWARE.
 #include <string>
 #include <iostream>
 #include <list>
+#include <stdio.h>
 
 #include <gsl/gsl_matrix.h>
 #include <gsl/gsl_vector_double.h>
@@ -72,11 +73,18 @@ int main( int argc, char* argv[] ){
   string out_path = options.workingDirectory;
   Selection movingResidues(options.residueNetwork);
   Molecule* protein = IO::readPdb(
-      options.ligandStructureFile,
+      options.initialStructureFile,
       options.extraCovBonds,
       options.hydrogenbondMethod,
       options.hydrogenbondFile
   );
+
+    Molecule* equilibrium = IO::readPdb(
+            options.equilibriumStructureFile,
+            options.extraCovBonds,
+            options.hydrogenbondMethod,
+            options.hydrogenbondFile
+    );
     
     if (options.setligand!=""){
         protein->setatomligand(options.setligand);
@@ -96,45 +104,12 @@ int main( int argc, char* argv[] ){
   log("rigidity") << "> " << protein->m_spanningTree->ligand_dof_id.size() << " DOFs of which " << protein->m_spanningTree->ligand_cycledof_id.size() << " are cycle-DOFs from ligand\n" << endl;
 
   Configuration* conf = protein->m_conf;
-  NullspaceSVD ns = *(dynamic_cast<NullspaceSVD*>(conf->getNullspaceligand()));
+  NullspaceSVD ns = *(dynamic_cast<NullspaceSVD*>(conf->getNullspace()));
   int numRows = ns.getMatrix()->size1;
   int numCols = ns.getMatrix()->size2;
   int nullspaceCols = ns.getNullspaceSize();
   int rankJacobian = numCols - nullspaceCols;
   int numRedundantCons = numRows-rankJacobian;
-
-
-    Molecule* protein_noligand = IO::readPdb(
-            options.noligandStructureFile,
-            options.extraCovBonds,
-            options.hydrogenbondMethod,
-            options.hydrogenbondFile
-    );
-
-    if (options.setligand!=""){
-        protein_noligand->setatomligand(options.setligand);
-    }
-
-    protein_noligand->initializeTree(movingResidues,1.0,options.roots);
-    string name_noligand = protein_noligand->getName();
-
-    log("rigidity")<<"Molecule without ligand has:"<<endl;
-    log("rigidity") << "> " << protein_noligand->getAtoms().size() << " atoms" << endl;
-    log("rigidity")<<"> "<<protein_noligand->getInitialCollisions().size()<<" initial collisions"<<endl;
-    log("rigidity")<<"> "<<protein_noligand->m_spanningTree->m_cycleAnchorEdges.size()<<" total bond constraints"<<endl;
-    log("rigidity")<<"> "<<protein_noligand->getHBonds().size()<<" hydrogen bonds"<<endl;
-    log("rigidity")<<"> "<<protein_noligand->getHydrophobicBonds().size()<<" hydrophobic bonds"<<endl;
-    log("rigidity")<<"> "<<protein_noligand->getDBonds().size()<<" distance bonds"<<endl;
-    log("rigidity") << "> " << protein_noligand->m_spanningTree->getNumDOFs() << " DOFs of which " << protein_noligand->m_spanningTree->getNumCycleDOFs() << " are cycle-DOFs" << endl;
-    log("rigidity") << "> " << protein_noligand->m_spanningTree->ligand_dof_id.size() << " DOFs of which " << protein_noligand->m_spanningTree->ligand_cycledof_id.size() << " are cycle-DOFs from ligand\n" << endl;
-
-    Configuration* conf_noligand = protein_noligand->m_conf;
-    NullspaceSVD ns_noligand = *(dynamic_cast<NullspaceSVD*>(conf_noligand->getNullspaceligand()));
-    int numRows_noligand = ns_noligand.getMatrix()->size1;
-    int numCols_noligand = ns_noligand.getMatrix()->size2;
-    int nullspaceCols_noligand = ns_noligand.getNullspaceSize();
-    int rankJacobian_noligand = numCols_noligand - nullspaceCols_noligand;
-    int numRedundantCons_noligand = numRows_noligand-rankJacobian_noligand;
 
     //Site transfer DOF analysis
     ///Only if source and sink are provided, compute mutual information
@@ -142,18 +117,15 @@ int main( int argc, char* argv[] ){
     if(mutualInformation) {
         Selection source(options.source);
         Selection sink(options.sink);
-        double mutInfo_noligand = protein_noligand->m_conf->siteDOFTransfer(source, sink,
-                                                          ns_noligand.getBasis()); /// change this to V-matrix for whole sliding mechanism
+        /*double mutInfo_noligand = protein_noligand->m_conf->siteDOFTransfer(source, sink,
+                                                          ns_noligand.getBasis()); /// change this to V-matrix for whole sliding mechanism*/
         double mutInfo = protein->m_conf->siteDOFTransfer(source, sink,
                                                           ns.getBasis()); /// change this to V-matrix for whole sliding mechanism
     }
 
   /// Create larger rigid substructures for rigid cluster decomposition
-  Molecule* rigidified = protein->collapseRigidBonds(options.collapseRigid);
-
-    Molecule* rigidified_noligand = protein_noligand->collapseRigidBonds(options.collapseRigid);
-
-
+    //Molecule* rigidified_noligand = protein_noligand->collapseRigidBonds(options.collapseRigid);
+    Molecule* rigidified = protein->collapseRigidBonds(options.collapseRigid);
 
   ///Write PDB File for pyMol usage
   int sample_id = 1;
@@ -161,79 +133,91 @@ int main( int argc, char* argv[] ){
                     std::to_string((long long)sample_id)
                     //static_cast<ostringstream*>( &(ostringstream() << sample_id) )->str()
                     + ".pdb";
-  string out_file_noligand = out_path + "output/" + name_noligand + "_new_" +
-                      std::to_string((long long)sample_id)
-                      //static_cast<ostringstream*>( &(ostringstream() << sample_id) )->str()
-                      + ".pdb";
 
   rigidified->writeRigidbodyIDToBFactor();
   rigidified->m_conf->m_vdwEnergy = protein->vdwEnergy();
   IO::writePdb(rigidified, out_file);
 
-    rigidified_noligand->writeRigidbodyIDToBFactor();
-    rigidified_noligand->m_conf->m_vdwEnergy = protein_noligand->vdwEnergy();
-    IO::writePdb(rigidified_noligand, out_file_noligand);
+  //if(conf->checknocoupling(conf->getNullspace(),conf->getNullspacenocoupling()) && options.nocoupling == "true"){std::cout<<"this protein has no binding bond between ligand and protein"<<std::endl;exit(-1);}
 
+  /*rigidified_noligand->writeRigidbodyIDToBFactor();
+  rigidified_noligand->m_conf->m_vdwEnergy = protein_noligand->vdwEnergy();
+  IO::writePdb(rigidified_noligand, out_file_noligand);*/
 
+    string proteinonlyname="noprotonly";
+    if(options.proteinonly){proteinonlyname="protonly";}
 
-    Eigenvalue Ev = *(dynamic_cast<Eigenvalue*>(rigidified->m_conf->Hessianmatrixentropy(20.0)));
-    ///save Jacobian and Nullspace to file
-    string outJac1=out_path + "output/" +  name + "_Hessian_test_" +
-                  std::to_string((long long)sample_id)
-                  + ".txt";
-    string outNull1=out_path + "output/" +  name + "_eigen_test_" +
-                   std::to_string((long long)sample_id)
-                   + ".txt";
-    gsl_matrix_outtofile(Ev.getHessiantorsionangle(),outJac1);
-    gsl_vector_outtofile(Ev.getEigenvalue(),outNull1);
-
-    Eigenvalue Ev_noligand = *(dynamic_cast<Eigenvalue*>(rigidified_noligand->m_conf->Hessianmatrixentropy(20.0)));
-    ///save Jacobian and Nullspace to file
-    string outJac1_noligand=out_path + "output/" +  name_noligand + "_Hessian_test_" +
-                   std::to_string((long long)sample_id)
-                   + ".txt";
-    string outNull1_noligand=out_path + "output/" +  name_noligand + "_eigen_test_" +
-                    std::to_string((long long)sample_id)
+for(int i=0;i<options.entropycutoff.size();i++) {
+    for(int j=0;j<options.vdwenergycutoff.size();j++) {
+        conf->Hessianmatrixentropy(options.entropycutoff[i],options.coefficient,options.vdwenergycutoff[j],conf->getNullspace(), equilibrium,options.proteinonly,"false");
+        if(options.getHessian) {
+            ///save Jacobian and Nullspace to file
+            string outJac1 =
+                    out_path + "output/" + name + "_Hessian_" + std::to_string((int) options.vdwenergycutoff[j]) + "_" +
+                    std::to_string((int) options.entropycutoff[i]) + "_" + proteinonlyname + "_test_" +
+                    std::to_string((long long) sample_id)
                     + ".txt";
-    gsl_matrix_outtofile(Ev_noligand.getHessiantorsionangle(),outJac1_noligand);
-    gsl_vector_outtofile(Ev_noligand.getEigenvalue(),outNull1_noligand);
+            gsl_matrix_outtofile(conf->geteigenvalue()->getHessiantorsionangle(), outJac1);
+        }
+        string outNull1 =
+                out_path + "output/" + name + "_eigen_" + std::to_string((int) options.vdwenergycutoff[j]) + "_" +
+                std::to_string((int) options.entropycutoff[i]) + "_" + proteinonlyname + "_test_" +
+                std::to_string((long long) sample_id)
+                + ".txt";
+        gsl_vector_outtofile(conf->geteigenvalue()->getSingularvalue(), outNull1);
+
+        if (!conf->checknocoupling() && options.nocoupling == "true") {
+            conf->Hessianmatrixentropy(options.entropycutoff[i], options.coefficient,options.vdwenergycutoff[j],conf->getNullspacenocoupling(),equilibrium, options.proteinonly,"true");
+            ///save Jacobian and Nullspace to file
+            if(options.getHessian){
+                string outJac2 =
+                        out_path + "output/" + name + "_nocoupling_Hessian_" +
+                        std::to_string((int) options.vdwenergycutoff[j]) +
+                        "_" + std::to_string((int) options.entropycutoff[i]) + "_" + proteinonlyname + "_test_" +
+                        std::to_string((long long) sample_id)
+                        + ".txt";
+                gsl_matrix_outtofile(conf->geteigenvalue()->getHessiantorsionangle(), outJac2);
+            }
+            string outNull2 =
+                    out_path + "output/" + name + "_nocoupling_eigen_" + std::to_string((int) options.vdwenergycutoff[j]) +
+                    "_" + std::to_string((int) options.entropycutoff[i]) + "_" + proteinonlyname + "_test_" +
+                    std::to_string((long long) sample_id)
+                    + ".txt";
+            /*FILE * f2 = fopen (outNull2.c_str(), "w");
+            gsl_vector_fwrite (f2, Evnocoupling->getSingularvalue());
+            fclose (f2);
+            FILE * f3 = fopen (outJac2.c_str(), "w");
+            gsl_matrix_fwrite (f3, Evnocoupling->getHessiantorsionangle());
+            fclose (f3);*/
+
+            gsl_vector_outtofile(conf->geteigenvalue()->getSingularvalue(), outNull2);
+            //gsl_vector_outtofile(conf->getNullspacenocoupling()->buildDofRigid(), rigiddof2);
+        }
+    }
+}
 
     //Print final status
     double end_time = timer.ElapsedTime();
     log("rigidity")<< "Took "<<(end_time-start_time)<<" seconds to perform rigidity analysis\n";
 
-  if(options.saveData <= 0) return 0;
-
-
-  ///save pyMol coloring script
-  string pyMol = out_path + "output/" + name + "_pyMol_" +
-                 std::to_string((long long) sample_id)
-                 + ".pml";
-  string statFile = out_path + "output/" + name + "_stats_" +
-                    std::to_string((long long) sample_id)
-                    + ".txt";
-  ///Write statistics
-  IO::writeStats(protein, statFile, rigidified); //original protein with all bonds etc, rigidified one for cluster info
-
-
-  ///Write pyMol script
-  IO::writePyMolScript(rigidified, out_file, pyMol, protein);
+    if(options.saveData <= 0) return 0;
 
     ///save pyMol coloring script
-    string pyMol_noligand = out_path + "output/" + name_noligand + "_pyMol_" +
+    string pyMol = out_path + "output/" + name + "_pyMol_" +
                    std::to_string((long long) sample_id)
                    + ".pml";
-    string statFile_noligand = out_path + "output/" + name_noligand + "_stats_" +
+    string statFile = out_path + "output/" + name + "_stats_" +
                       std::to_string((long long) sample_id)
                       + ".txt";
     ///Write statistics
-    IO::writeStats(protein_noligand, statFile_noligand, rigidified_noligand); //original protein with all bonds etc, rigidified one for cluster info
+    IO::writeStats(protein, statFile, rigidified); //original protein with all bonds etc, rigidified one for cluster info
 
     ///Write pyMol script
+    IO::writePyMolScript(rigidified, out_file, pyMol, protein);
 
-    IO::writePyMolScript(rigidified_noligand, out_file_noligand, pyMol_noligand, protein_noligand);
 
-  return 0;
+
+    return 0;
 }
 
 

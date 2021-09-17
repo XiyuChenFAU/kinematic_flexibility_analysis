@@ -69,6 +69,16 @@ class KinTree: public KinGraph
 
   /** Find the lowest common ancestor for v1 and v2 */
   KinVertex* findCommonAncestor (KinVertex *v1, KinVertex *v2);
+    
+    void setliganddofid();
+    std::vector<unsigned int> ligand_dof_id;
+    std::vector<unsigned int> binding_dof_id;
+    std::vector<unsigned int> ligand_cycledof_id;
+    std::vector<unsigned int> all_dof_id;
+    int ligand_dof_id_num;
+    int binding_dof_id_num;
+    int ligand_cycledof_id_num;
+    
 
  private:
 

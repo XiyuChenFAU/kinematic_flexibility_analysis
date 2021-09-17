@@ -46,7 +46,8 @@ Atom::Atom (const bool& hetatm, const string& name, const int& id, const Coordin
     m_parentResidue(residue),
     m_rigidbody(nullptr),
     m_biggerRigidbody(nullptr),
-    m_bFactor(0)
+    m_bFactor(0),
+    m_ligand(false)
 {
 //  On_sidechain = true;
 
@@ -88,6 +89,7 @@ Atom::Atom (const bool& hetatm, const string& name, const int& id, const Coordin
     }
   }
 }
+
 
 const string& Atom::getName () const {
   return m_name;
@@ -206,6 +208,14 @@ Bond* Atom::getBond(Atom *other) const {
 
 Residue* Atom::getResidue () const{
   return m_parentResidue;
+}
+
+void Atom::setligand() {
+    m_ligand=true;
+}
+
+bool Atom::getligand(){
+    return m_ligand;
 }
 
 void Atom::addCovBond (Bond * cbond) {

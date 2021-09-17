@@ -115,7 +115,7 @@ class Atom {
 
   void addHbond(Hbond *hbond);
 
-  void addHydrophobicBond(HydrophobicBond *hydrophobicBond)  ;
+  void addHydrophobicBond(HydrophobicBond *hydrophobicBond);
 
 
   void removeHbond(Hbond *hbond);
@@ -134,6 +134,9 @@ class Atom {
   bool isWithinDistanceFrom(Atom *center, double dist) const; // is within a sphere centered at center with radius dist
 
   void setRigidbody(Rigidbody *rb);
+    
+  void setligand();
+  bool getligand();
 
   Rigidbody *getRigidbody() const;
 
@@ -175,6 +178,7 @@ class Atom {
   std::vector<Atom *> Hbond_neighbor_list;
   std::vector<Atom *> HydrophobicBond_Neighbor_list;
   std::vector<Atom *> Second_cov_neighbor_list; // 2nd immediate covalent bond neighbors
+  std::vector<Atom *> grid_Neighbor_list;
 
   AtomType m_element;
 
@@ -187,6 +191,7 @@ class Atom {
   Rigidbody *m_biggerRigidbody;
   float m_bFactor; ///< Used to write b-factor column for pdb output
   float m_occupancy;
+  bool m_ligand;
 };
 
 std::ostream &operator<<(std::ostream &os, const Atom &a);

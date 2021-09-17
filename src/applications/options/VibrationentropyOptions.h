@@ -49,9 +49,11 @@ class VibrationentropyOptions {
   /** The working directory */
   std::string workingDirectory;
   /** File-path for the ligand structure. */
-  std::string ligandStructureFile;
+  std::string initialStructureFile;
+  /** File-path for the euilibrium structure. */
+  std::string equilibriumStructureFile;
   /** File-path for the no ligand structure. */
-  std::string noligandStructureFile;
+  //std::string noligandStructureFile;
   /** Annotation file-path common for all initial structures. */
   std::string annotationFile;
   /** File containing hydrogen bond definitions. */
@@ -63,6 +65,12 @@ class VibrationentropyOptions {
   /** Collision factor indicating the multiplication factor of all atoms van
         der Waals radii. */
   double collisionFactor;
+  /** potential distance cut off distance. */
+  std::vector<double> entropycutoff;
+  /** coefficient for calculation of frequency. */
+  double coefficient;
+  /** potential energy cut off distance. */
+  std::vector<double> vdwenergycutoff;
   /** The random generator seed. */
   int seed;
   /** Save output: Indicate the level of files that shall be saved. */
@@ -85,6 +93,17 @@ class VibrationentropyOptions {
   std::string source;
   /** set the ligand. */
   std::string setligand;
+
+  /** run no binding between ligand and protein. */
+  std::string nocoupling;
+
+  /** only analysis the vibrational entropy change of protein*/
+  bool proteinonly;
+
+  /** output the Hessian matrix*/
+  bool getHessian;
+
+
 
   void print();
 

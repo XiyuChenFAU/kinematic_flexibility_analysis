@@ -68,3 +68,46 @@ void DOF::setCycleIndex(unsigned int idx)
 {
   m_cycleIndex = idx;
 }
+
+bool DOF::isDOFligand() const{
+    if(m_edge->StartVertex->isligand() or m_edge->EndVertex->isligand()){
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+
+bool DOF::isDOFnull() const {
+    if (m_edge->StartVertex->isnullligand() and m_edge->EndVertex->isnullligand()) {
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+
+bool DOF::isDOFbinding() const{
+    int t1=0;
+    int t2=0;
+    if(m_edge->StartVertex->isligand() && m_edge->StartVertex->m_rigidbody!=nullptr){
+        t1=1;
+    }
+    if(m_edge->EndVertex->isligand() && m_edge->EndVertex->m_rigidbody!=nullptr){
+        t2=1;
+    }
+
+    if(t1+t2==1){
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+
+std::pair<int,int> DOF::dofatomid() const{
+    std::pair<int,int> atom_id;
+    atom_id.first=m_edge->getBond()->m_atom1->getId();
+    atom_id.second=m_edge->getBond()->m_atom2->getId();
+    return atom_id;
+}

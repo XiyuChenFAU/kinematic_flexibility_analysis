@@ -63,8 +63,8 @@ VibrationentropyOptions::VibrationentropyOptions(int argc, char* argv[])
   int i;
   for(i=1;i<argc;i++){
     string arg = argv[i];
-    if(arg=="--ligand"){                       ligandStructureFile = argv[++i];                   continue; }
-    if(arg=="--noligand"){                      noligandStructureFile = argv[++i];                   continue; }
+    if(arg=="--initial"){                       initialStructureFile = argv[++i];                   continue; }
+    if(arg=="--equilibrium"){                   equilibriumStructureFile = argv[++i];               continue; }
     if(arg=="--annotation"){                    annotationFile = argv[++i];                         continue; }
     if(arg=="--hbondMethod"){                   hydrogenbondMethod = argv[++i];                     continue; }
     if(arg=="--hbondFile"){                     hydrogenbondFile = argv[++i];                       continue; }
@@ -73,6 +73,9 @@ VibrationentropyOptions::VibrationentropyOptions(int argc, char* argv[])
     if(arg=="--collisionFactor" || arg=="-c"){  collisionFactor = atof(argv[++i]);                  continue; }
     if(arg=="--seed"){                          seed = atoi(argv[++i]);                             continue; }
     if(arg=="--saveData"){                      saveData = atoi(argv[++i]);                         continue; }
+    if(arg=="--entropycutoff"){                 Util::split( string(argv[++i]),',', entropycutoff);    continue; }
+    if(arg=="--vdwenergycutoff"){               Util::split( string(argv[++i]),',', vdwenergycutoff);  continue; }
+    if(arg=="--coefficient"){                   coefficient = atof(argv[++i]);                      continue; }
     if(arg=="--residueNetwork" || arg=="-res"){ residueNetwork = argv[++i];                         continue; }
     if(arg=="--preventClashes"){                preventClashes = Util::stob(argv[++i]);             continue; }
     if(arg=="--root"){                          Util::split( string(argv[++i]),',', roots );        continue; }
@@ -82,6 +85,9 @@ VibrationentropyOptions::VibrationentropyOptions(int argc, char* argv[])
     if(arg=="--sink"){                          sink = argv[++i];                                   continue; }
     if(arg=="--source"){                        source = argv[++i];                                 continue; }
     if(arg=="--setligand"){                     setligand = argv[++i];                              continue; }
+    if(arg=="--nocoupling"){                    nocoupling = argv[++i];                             continue; }
+    if(arg=="--proteinonly"){                   proteinonly = Util::stob(argv[++i]);                continue; }
+    if(arg=="--getHessian"){                    getHessian = Util::stob(argv[++i]);                 continue; }
 //    if(arg=="--relativeDistances"){             relativeDistances = argv[++i];                      continue; }
 
     if(arg.at(0)=='-'){
@@ -93,26 +99,33 @@ VibrationentropyOptions::VibrationentropyOptions(int argc, char* argv[])
   }
 
   //Check initial structure
-  if(ligandStructureFile.empty()) {
+  if(initialStructureFile.empty()) {
     enableLogger("so");
-    cerr<<"Initial ligand structure file must be supplied"<<endl<<endl;
-    exit(-1);
-  }
-    
-  if(noligandStructureFile.empty()) {
-    enableLogger("so");
-    cerr<<"Initial noligand structure file must be supplied"<<endl<<endl;
+    cerr<<"Initial structure file must be supplied"<<endl<<endl;
     exit(-1);
   }
 
-  //Set workingDirectory and moleculeName using the ligandStructureFile.
-  char* tmp = realpath(ligandStructureFile.c_str(), nullptr);
-  if(tmp==nullptr){ cerr<<ligandStructureFile<<" is not a valid PDB-file"<<endl; exit(-1); }
+  if(equilibriumStructureFile.empty()) {
+        enableLogger("so");
+        cerr<<"Original or Equilibrium structure file must be supplied"<<endl<<endl;
+        exit(-1);
+  }
+
+  //Set workingDirectory and moleculeName using the initialStructureFile.
+  char* tmp = realpath(initialStructureFile.c_str(), nullptr);
+  if(tmp==nullptr){ cerr<<initialStructureFile<<" is not a valid PDB-file"<<endl; exit(-1); }
   string pdb_file(tmp);
   int nameSplit = pdb_file.find_last_of("/\\");
+
+  //Set workingDirectory and moleculeName using the equilibriumStructureFile.
+  char* tmp1 = realpath(equilibriumStructureFile.c_str(), nullptr);
+  if(tmp1==nullptr){ cerr<<equilibriumStructureFile<<" is not a valid PDB-file"<<endl; exit(-1); }
+  string pdb_file1(tmp1);
+  int nameSplit1 = pdb_file1.find_last_of("/\\");
+
   if(workingDirectory.empty()) {
     workingDirectory = pdb_file.substr(0, nameSplit + 1);
-    log("so")<<"Changing working directory to "<<workingDirectory<<" using ligand"<<endl;
+    log("so")<<"Changing working directory to "<<workingDirectory<<" using initial"<<endl;
   }
 
   if(collapseRigid<0 || collapseRigid>2){
@@ -124,8 +137,8 @@ VibrationentropyOptions::VibrationentropyOptions(int argc, char* argv[])
 
 
 void VibrationentropyOptions::initializeVariables(){
-  ligandStructureFile       = "";
-  noligandStructureFile     = "";
+  initialStructureFile       = "";
+  equilibriumStructureFile   = "";
 //  targetStructureFile       = "";
   annotationFile            = "";
   hydrogenbondFile          = "";
@@ -143,12 +156,18 @@ void VibrationentropyOptions::initializeVariables(){
   sink                      = "";
   source                    = "";
   setligand                 = "";
+  entropycutoff             = {20.0};
+  coefficient               = 1.0;
+  nocoupling                ="true";
+  vdwenergycutoff           ={10000.0};
+  proteinonly               =false;
+  getHessian                =false;
 }
 
 void VibrationentropyOptions::print(){
   log("so")<<"Sampling options:"<<std::endl;
-  log("so")<<"  --ligand "<<ligandStructureFile<<endl;
-  log("so")<<"  --noligand "<<noligandStructureFile<<endl;
+  log("so")<<"  --initial "<<initialStructureFile<<endl;
+  log("so")<<"  --equilibrium "<<equilibriumStructureFile<<endl;
 //  log("so")<<" --target "<<targetStructureFile<<endl;
   log("so")<<"  --annotation "<<annotationFile<<endl;
   if(!hydrogenbondFile.empty()) {
@@ -167,17 +186,23 @@ void VibrationentropyOptions::print(){
   log("so")<<"  --collapseRigidEdges "<<collapseRigid<<endl;
   log("so")<<"  --sink "<<sink<<endl;
   log("so")<<"  --source "<<source<<endl;
-  log("so")<<"  --setligand "<<setligand<<endl<<endl;
+  log("so")<<"  --setligand "<<setligand<<endl;
+  log("so")<<"  --entropycutoff "; for(unsigned int i=0;i<entropycutoff.size();i++) log("so")<<entropycutoff[i]<<" "; log("so")<<endl;
+  log("so")<<"  --vdwenergycutoff "; for(unsigned int i=0;i<vdwenergycutoff.size();i++) log("so")<<vdwenergycutoff[i]<<" "; log("so")<<endl;
+  log("so")<<"  --coefficient "<<coefficient<<endl;
+  log("so")<<"  --nocoupling "<<nocoupling<<endl;
+  log("so")<<"  --proteinonly "<<proteinonly<<endl;
+  log("so")<<"  --getHessian "<<getHessian<<endl<<endl;
 }
 
 void VibrationentropyOptions::printUsage(char* pname){
-  log("so")<<"Usage: "<<pname<<" --ligand <pdb-file> --noligand <pdb-file> [option list]"<<endl;
-  log("so")<<"Performs vibrational entropy analysis for ligand and noligand file"<<endl;
+  log("so")<<"Usage: "<<pname<<" --initial <pdb-file> [option list]"<<endl;
+  log("so")<<"Performs vibrational entropy analysis"<<endl;
   log("so")<<endl;
   log("so")<<"Options:"<<endl;
 
-  log("so")<<"  --ligand <pdb-file> \t: Specifies the initial structure."<<endl;
-  log("so")<<"  --noligand <pdb-file> \t: Specifies the initial structure."<<endl;
+  log("so")<<"  --initial <pdb-file> \t: Specifies the initial structure."<<endl;
+  log("so")<<"  --equilibrium <pdb-file> \t: Specifies the equilibrium structure."<<endl;
 //log("so")<<"  --annotation <file-path> \t: Annotations can specify secondary structures or other things ";
 //log("so")<<"relevant to the sampling strategy. For RNA, standard WC will indicate non-free residues that wont be rebuilt"<<endl;
 //  log("so")<<"  --hbondMethod <user|dssr|rnaview|first|kinari|hbplus|vadar|identify> \t: Format of the --hbondFile. If no --hbondFile argument is provided, instructions ";
@@ -199,6 +224,12 @@ void VibrationentropyOptions::printUsage(char* pname){
   log("so")<<"  --sink <selection-pattern>\t: A pymol-like pattern that specifies sink residues in DoF transfer analysis. Default none."<<endl;
   log("so")<<"  --source <selection-pattern>\t: A pymol-like pattern that specifies source residues in DoF transfer analysis. Default none."<<endl;
   log("so")<<"  --setligand <chain name>\t: set chain for the ligand to study vibrational entropy. Default none."<<endl;
+  log("so")<<"  --entropycutoff <double>[<double>,..]\t: potential energy cut off distance. Default 20.0."<<endl;
+  log("so")<<"  --vdwenergycutoff <double>[<double>,..]\t: van der waals energy cut off for entropy calculation. Default 10000.0."<<endl;
+  log("so")<<"  --coefficient <real number>\t: coefficient for calculation of frequency. Default 1."<<endl;
+  log("so")<<"  --nocoupling true/false \t: run the nocoupling between the protein and ligand. Default true."<<endl;
+  log("so")<<"  --proteinonly true/false \t: Only analysis the vibrational entropy change in protein. Default false."<<endl;
+  log("so")<<"  --getHessian true/false \t: Output the Hessian matrix. Default false."<<endl;
 }
 
 

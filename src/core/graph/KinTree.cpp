@@ -205,6 +205,7 @@ KinTree::KinTree( const std::vector<Rigidbody*>& rigidbodies, const std::vector<
       addCycleDOF(edge->getDOF());
     }
   }
+  setliganddofid();
 }
 
 KinTree::~KinTree () {
@@ -402,4 +403,50 @@ void KinTree::addCycleDOF(DOF* dof)
     m_cycleDOFs.push_back(dof);
   }
 }
+
+void KinTree::setliganddofid(){
+    ligand_dof_id_num=0;
+    binding_dof_id_num=0;
+    ligand_cycledof_id_num=0;
+    for(auto const& DOF: m_dofs){
+        if(DOF->isDOFligand()){
+            ligand_dof_id.push_back(DOF->getIndex());
+            if (DOF->isDOFnull()){
+                ligand_dof_id_num+=1;
+                all_dof_id.push_back(1);
+            }
+            else{
+                all_dof_id.push_back(9);
+            }
+        }
+        else{
+            if (DOF->isDOFnull()){
+                all_dof_id.push_back(0);
+            }
+            else{
+                all_dof_id.push_back(9);
+            }
+        }
+
+        if(DOF->isDOFbinding()){
+            binding_dof_id.push_back(DOF->getIndex());
+            if (DOF->isDOFnull()){binding_dof_id_num+=1;}
+        }
+        if(DOF->isDOFbinding()){
+            binding_dof_id.push_back(DOF->getIndex());
+            if (DOF->isDOFnull()){binding_dof_id_num+=1;}
+        }
+
+    }
+
+    for(auto const& cycleDOF: m_cycleDOFs){
+        if(cycleDOF->isDOFligand()){
+            ligand_cycledof_id.push_back(cycleDOF->getCycleIndex());
+            if (cycleDOF->isDOFnull()){ligand_cycledof_id_num+=1;}
+        }
+    }
+    sort(ligand_cycledof_id.begin(), ligand_cycledof_id.end());
+}
+
+
 

@@ -53,6 +53,7 @@ class Util {
   static std::string cutDecimal(float number, int decimals);
 
   static std::vector<int>& split( const std::string &s, char delim, std::vector<int>& numbers );
+  static std::vector<double>& split( const std::string &s, char delim, std::vector<double>& numbers );
   static std::vector<std::string>& split( const std::string &s, char delim, std::vector<std::string> &words );
   static std::vector<std::string> split( const std::string &s, char delim );
   static std::vector<std::string> split( const std::string &s, const std::string& delim );
